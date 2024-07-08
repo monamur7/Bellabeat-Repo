@@ -75,14 +75,59 @@ The dataset has 18 CSV files representing 18 datasets but of these datasets, I w
 
 We have opted for _R in RStudio_ for our data analysis due to its ability to provide in-depth statistical analysis, data manipulation, and generating complex insights from the data. <br> On the other hand for visualization we are using _Tableau_, another powerful tool employed for creating interactive and visually appealing dashboards, making it easier to explore and present the findings effectively to both internal and external stakeholders. <br> Together, they provide a comprehensive approach to analyzing and visualizing data.
 
-The following CSV files were used for analysis:
-```r
+### 1. The following CSV files were used for analysis:
+```r  
 dailyActivity_merged.csv
 sleepDay_merged.csv
 weightLogInfo_merged.csv
 hourlySteps_merged.csv
 heartrate_seconds_merged.csv
 ```
+### 2. Examine the data of three main tables: `daily_activity`, `sleep_day` & `weight` and, check for NA as well as duplicate values and, eliminate them:
+```r
+dim(daily_activity)
+dim(sleep_day)
+dim(weight)
+
+sum(is.na(daily_activity))
+sum(is.na(sleep_day))                 # We will leave the NA. 
+sum(is.na(weight))                    # 65 NA values belongs to "Fat" data of different dates.
+
+sum(duplicated(daily_activity))
+sum(duplicated(sleep_day))
+sum(duplicated(weight))              
+
+sleep_day <- sleep_day[!duplicated(sleep_day), ]      # Eliminate the 3 duplicate values in the table `sleep_day`
+```
+### 3. Add a new column for the weekdays:
+```r
+daily_activity <- daily_activity %>% mutate(Weekday = weekdays(as.Date(ActivityDate, "%m/%d/%Y")))
+```
+### 4. Check for the uniqueness of 30 users using `n_distinct()`:
+```r
+n_distinct(daily_activity$Id)
+n_distinct(hourly_steps$Id)
+n_distinct(sleep_day$Id)
+```
+The table has **33** unique users' data from `daily_activity`, **24** from `sleep_day` and only **8** from `weight`.
+
+### 5. Check how the data was recorded in the `weight` table:
+```r
+weight %>% 
+  filter(IsManualReport == "True") %>% 
+  group_by(Id) %>% 
+  summarise("Manual Weight Report"=n()) %>%            # 5 users manually reported the weight whereas,
+  distinct()                                           # 3 users reported it with a connected device - wifi connected scale
+```
+This leads to the question that, how often do users record their data? To have additional insights, we used `ggplot()` to plot a bar graph which shows us that the users mostly record their data from Tuesdays to Thursdays.
+
+<img src="image-1.png" width="520"/>
+
+
+
+
+
+
 
 
 iv. ANALYZE 
