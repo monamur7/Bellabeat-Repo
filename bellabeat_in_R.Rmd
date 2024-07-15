@@ -1,0 +1,719 @@
+---
+title: "Bellabeat Case Study in R"
+author: "Monalisa M"
+date: "2024-07-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+chooseCRANmirror(graphics=FALSE, ind=1)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Step I: Install and load all the required packages
+
+```{r packages, echo=TRUE, message=FALSE, warning=FALSE}
+# install.packages("tidyverse")
+# install.packages("dplyr")
+# install.packages("lubridate")
+# install.packages("skimr")
+# install.packages("ggplot2")
+# install.packages("cowplot")
+# install.packages("readr")
+# install.packages("plotly")
+# install.packages("gganimate")
+# install.packages("gifski")
+```
+
+```{r library, echo=TRUE, message=FALSE, warning=FALSE}
+library(tidyverse)            # wrangle data
+library(dplyr)                # clean data
+library(lubridate)            # wrangle date attributes
+library(skimr)                # get summary of data
+library(ggplot2)              # visualize data
+library(cowplot)              # grid the plot
+library(readr)                # read csv files
+library(plotly)               # pie chart
+library(gganimate)            # animated graphics
+library(gifski)               # gif animation
+```
+
+## Step II: Prepare the data 
+
+#### Set the working directory and import the datasets to be used for data analysis.
+```{r directory, echo=TRUE}
+setwd("C:\\Bellabeat-data-analysis-case-study\\Bellabeat_Data")
+```
+
+```{r dataset1}
+daily_activity <- read.csv("dailyActivity_merged.csv")
+```
+```{r dataset2}
+sleep_day <- read.csv("sleepDay_merged.csv")
+```
+```{r dataset3}
+weight <- read.csv("weightLogInfo_merged.csv")
+```
+```{r dataset4}
+hourly_steps <- read.csv("hourlySteps_merged.csv")
+```
+```{r dataset5}
+heartrate_seconds <- read.csv("heartrate_seconds_merged.csv")
+```
+
+#### Check first 6 rows of the datasets with `head()`
+```{r head}
+head(daily_activity)
+head(sleep_day)
+head(weight)
+head(hourly_steps)
+head(heartrate_seconds)
+```
+
+#### Check for NA and duplicate values with `is.na()` and `duplicated()` respectively.
+```{r NA_values}
+sum(is.na(daily_activity))
+sum(is.na(sleep_day))
+sum(is.na(weight))
+sum(is.na(hourly_steps))
+sum(is.na(heartrate_seconds))
+```
+
+```{r duplicate_values}
+sum(duplicated(daily_activity))
+sum(duplicated(sleep_day))
+sum(duplicated(weight))
+sum(duplicated(hourly_steps))
+sum(duplicated(heartrate_seconds))
+```
+
+#### The 65 NA values belongs to _Fat_ data of different dates so, leave as it is.
+#### Remove duplicates
+```{r sleep_dup}
+sleep_day <- sleep_day[!duplicated(sleep_day), ]
+sum(duplicated(sleep_day))
+```
+
+#### Add new column for _Weekdays_
+```{r col_weekdays}
+daily_activity <- daily_activity %>% mutate(Weekday = weekdays(as.Date(ActivityDate, "%m/%d/%Y")))
+```
+
+#### Merge the datasets into a single data frame
+```{r merged}
+merged_v1 <- merge(daily_activity, sleep_day, by = c("Id"), all=TRUE)
+merged_data <- merge(merged_v1, weight, by = c("Id"), all=TRUE)
+```
+
+#### Order _Weekdays_ from Monday to Sunday for plotting
+```{r order_week, message=FALSE, warning=FALSE}
+merged_data$Weekday <- factor(merged_data$Weekday, 
+                              levels= c("Monday", "Tuesday", "Wednesday", "Thursday", 
+                                        "Friday", "Saturday", "Sunday"))
+
+# merged_data[order(merged_data$Weekday), ]       ## note: show no message as it is long
+```
+
+#### Check for NA, duplicate values, and all users are unique in merged data frame.
+```{r na/dup_merge}
+sum(is.na(merged_data))
+sum(duplicated(merged_data))
+```
+
+```{r dist_merge}
+n_distinct(merged_data$Id)      # supposed to have 30 users but the user count is 33      
+```
+
+## Step III: Examine the datasets and check for the uniqueness of all users/IDs. 
+
+#### We are supposed to have 30 users or 30 IDs. 
+#### There are 3 extra from ***_daily activity_*** and ***_hourly steps_*** table, 6 less from the ***_sleep day_*** table, 16 less from ***_heart rate seconds_*** table and 22 less from the ***_weight_*** table. 
+```{r dist_datasets}
+n_distinct(daily_activity$Id)
+n_distinct(hourly_steps$Id)
+n_distinct(sleep_day$Id)
+n_distinct(heartrate_seconds$Id)
+n_distinct(weight$Id)
+```
+
+#### Since ***_weight_*** table only has 8 users enter their information. Lets take a look at how they have entered the information. 
+```{r weight_report}
+weight %>% 
+  filter(IsManualReport == "True") %>% 
+  group_by(Id) %>% 
+  summarise("Manual Weight Report"=n()) %>%
+  distinct()                                 
+```
+
+#### Out of 8, 5 users manually reported the weight whereas 3 users reported it with a connected device - wifi connected scale.
+
+### When are the users most active in recording their data?
+
+First Plot: Data Recorded During the Week
+
+```{r data_rec_plot}
+ggplot(data=merged_data, aes(x=Weekday)) +
+  geom_bar(fill="firebrick") +
+  labs(title="Data Recorded During the Week",
+      caption= "Google Data Analytics Capstone",
+      subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+```
+
+#### It is to be noted from the above bar graph that **users record their data more from Tuesdays to Thursdays** and we have more of those days' data than other days.
+
+## Step IV: Overall Weekly and Hourly summary
+
+#### Change `chr` format to `mdy`/`mdy_hms` date/date-time format for plotting
+```{r chr_mdy_hms}
+merged_data$ActivityDate <- mdy(merged_data$ActivityDate)
+heartrate_seconds$Time <- mdy_hms(heartrate_seconds$Time)
+heartrate_seconds$ActivityDate <- as.Date(heartrate_seconds$Time)   #separate date from date-time format column
+```
+
+Second Plot: The Calories burned by users Over Time
+
+```{r cal_burnt_plot}
+dailyCalories_by_user <- ggplot(merged_data, aes(x = ActivityDate, y = Calories, color = as.factor(Id))) +
+  geom_line() +
+  labs(title= "The Calories burned by users Over Time",
+       caption= "Google Data Analytics Capstone",
+       subtitle= "Bellabeat data analysis case study")
+theme_minimal()
+
+#Animate the plot
+dailyCalories_by_user_animated <- dailyCalories_by_user + transition_reveal(ActivityDate)
+
+animate(dailyCalories_by_user_animated)
+```
+
+#### The graph above shows that users tend to burn similar amount of calories during the month analyzed, with a few and not too pronounced peaks or minimums.
+
+### Display critical information and evolution of the data of average calories over time to identify some trends.
+
+Third Plot: The Average of Daily Calories burned by users Over Time
+
+```{r avg_cal_burnt_plot, message=FALSE, warning=FALSE}
+merged_data_mean_cal <- merged_data %>% 
+  group_by(ActivityDate) %>% 
+  summarize(average_cal_user=((mean(Calories)/33)))
+
+avg_dailyCalories_by_user <- ggplot(merged_data_mean_cal, aes(x = ActivityDate, y = average_cal_user)) +
+  geom_line(color="blue") +
+  ylab("Average Calories") +
+  xlab("Activity Date") +
+  labs(title= "The Average of Daily Calories burned by users Over Time",
+       caption= "Google Data Analytics Capstone",
+       subtitle= "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33")
+theme_light()
+
+#Animate Plot
+avg_dailyCalories_by_user_animated <- avg_dailyCalories_by_user +
+  transition_reveal(ActivityDate)
+
+animate(avg_dailyCalories_by_user_animated)
+```
+
+#### The graph above shows that the **average daily calories burned by users range between 55 and 75 calories** during the month analyzed, with a trend going down on burnt calories.
+
+### Display critical information and evolution of the data of average steps over time to identify some trends.
+
+Fourth Plot: The Average Steps Over Time
+
+```{r avg_steps_plot, message=FALSE, warning=FALSE}
+merged_data_mean_steps <- merged_data %>% 
+  group_by(ActivityDate) %>% 
+  summarize(average_steps=mean(TotalSteps))
+
+avg_dailySteps <- ggplot(merged_data_mean_steps, aes(x = ActivityDate, y = average_steps)) +
+  geom_line(color="navyblue") +
+  ylab("Average Steps") +
+  xlab("Activity Date") +
+  labs(title= "The Average Steps Over Time",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33")
+theme_light()
+
+#Animate Plot
+avg_dailySteps_animated <- avg_dailySteps +
+  transition_reveal(ActivityDate)
+
+animate(avg_dailySteps_animated)
+```
+
+#### The graph above shows that users walked similar amount of steps during the month analyzed, with some pronounced peaks and minimums, which shows an unsteady trend.
+
+### Weekly
+```{r weekly_plot1, message=FALSE, warning=FALSE}
+ggplot(data=merged_data, aes(x=Weekday, y=TotalSteps, fill=Weekday)) + 
+  geom_bar(stat="identity", fill="cyan4") +
+  labs(title="More Steps on Saturday",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33", y="Total Steps") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+```
+
+#### It is to be noted in the bar graph above and just below that on Saturdays, the users take **more steps** and therefore spent **less time in sedentary** i.e., sedentary minutes.
+
+```{r weekly_plot2, message=FALSE, warning=FALSE}
+ggplot(data=merged_data, aes(x=Weekday, y=SedentaryMinutes, fill=Weekday)) + 
+  geom_bar(stat="identity", fill="cyan4") +
+  labs(title="Less Sedentary Minutes on Saturday", 
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33", y="Sedentary Minutes") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+
+ggplot(data=merged_data, aes(x=Weekday, y=Calories, fill=Weekday)) + 
+  geom_bar(stat="identity", fill="coral2") +
+  labs(title="Calories Burnt During the Week",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+
+ggplot(data=merged_data, aes(x=Weekday, y=TotalMinutesAsleep, fill=Weekday)) + 
+  geom_bar(stat="identity", fill="purple3") +
+  labs(title="Total Minutes Asleep During the Week",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33", y="Total Minutes Asleep") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+
+ggplot(data=merged_data, aes(x=Weekday, y=TotalDistance, fill=Weekday)) + 
+  geom_bar(stat="identity") + 
+  labs(title="Total Distance Vs. Weekday",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+```
+--- 
+
+#### How active are the users weekly in total steps?
+```{r weekly_plot3}
+ggplot(data=merged_data, aes(x=Weekday, y=TotalSteps, fill=Weekday)) + 
+  geom_bar(stat="identity") +
+  labs(title="Weekly Steps", 
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33", y="Total Steps") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+```
+
+#### The bar graph above shows that users take the **most steps on Tuesdays**.
+
+### Hourly
+```{r hourly}
+head(hourly_steps)
+n_distinct(hourly_steps$Id)    #33 users
+
+hourly_steps$ActivityHour=as.POSIXct(hourly_steps$ActivityHour,format="%m/%d/%Y %I:%M:%S %p")
+hourly_steps$Hour <-  format(hourly_steps$ActivityHour,format= "%H")
+head(hourly_steps)
+```
+
+
+#### How active are the users hourly in total steps? 
+```{r hourly_steps_plot}
+ggplot(data=hourly_steps, aes(x=Hour, y=StepTotal, fill=Hour)) +
+  geom_bar(stat="identity") +
+  labs(title="Hourly Steps",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33", y="Total Steps") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+```
+
+#### The users take the **most steps between 5PM to 7PM** and **12PM to 2PM**.
+
+## Step V: Statistical Summary
+
+#### Mean, Median, Min, Max of the datasets and the merged data (Optional)
+```{r summary_of_data}
+daily_activity %>%
+  dplyr::select(TotalSteps,
+                TotalDistance,
+                VeryActiveMinutes,
+                FairlyActiveMinutes,
+                LightlyActiveMinutes,
+                SedentaryMinutes,
+                Calories) %>%
+  summary()
+
+sleep_day %>%  
+  dplyr::select(TotalSleepRecords,
+                TotalMinutesAsleep,
+                TotalTimeInBed) %>%
+  summary()
+
+weight %>% 
+  dplyr::select(WeightPounds, BMI) %>%
+  summary()
+
+summary(heartrate_seconds$Value)
+```
+
+```{r heartrate_plot, message=FALSE, warning=FALSE}
+heartrate_mean <- heartrate_seconds %>% 
+  group_by(ActivityDate) %>% 
+  summarize(average_heartrate=mean(Value))
+
+avg_heartRate <- ggplot(heartrate_mean, aes(x = ActivityDate, y = average_heartrate)) +
+  geom_line(color="darkred") +
+  ylab("Average Heart Rate") +
+  xlab("Activity Date") +
+  labs(title="The Average Heart Rate of users Over Time",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33")
+theme_light()
+
+##Animate Plot
+avg_heartRate_animated <- avg_heartRate +
+  transition_reveal(ActivityDate)
+
+animate(avg_heartRate_animated)
+```
+
+#### This graph above shows that the users' **average heart rate is no less than 70 bpm** and **no more than 82.5 bpm**.
+
+##### ⛔ Optional for merged data
+```{r summary_of_data_optional}
+merged_data %>%
+  dplyr::select(Weekday,
+                TotalSteps,
+                TotalDistance,
+                VeryActiveMinutes,
+                FairlyActiveMinutes,
+                LightlyActiveMinutes,
+                SedentaryMinutes,
+                Calories,
+                TotalMinutesAsleep,
+                TotalTimeInBed,
+                WeightPounds,
+                BMI
+  ) %>%
+  summary()
+```
+
+## Step VI: Analysis on Active Minutes, Calories, Total Steps
+
+> The American Heart Association and the World Health Organization recommend at least 150 minutes of moderate-intensity activity or 75 minutes of vigorous activity, or a combination of both, each week.
+
+#### This means we need a daily goal of 21.4 minutes of FairlyActiveMinutes or 10.7 minutes of VeryActiveMinutes.
+
+### Active users
+```{r active_user_mins_}
+active_users <- daily_activity %>%
+  filter(FairlyActiveMinutes >= 21.4 | VeryActiveMinutes>=10.7) %>% 
+  group_by(Id) %>% 
+  count(Id) 
+
+n_distinct(active_users)
+```
+
+##### 30 users met fairly active minutes or very active minutes.
+
+#### The percentage of active minutes are divided into the four categories: Very Active, Fairly Active, Lightly Active and Sedentary.
+```{r active_user_mins_pie}
+total_minutes <- sum(daily_activity$SedentaryMinutes, daily_activity$VeryActiveMinutes, daily_activity$FairlyActiveMinutes, daily_activity$LightlyActiveMinutes)
+sedentary_percentage <- sum(daily_activity$SedentaryMinutes)/total_minutes*100
+lightly_percentage <- sum(daily_activity$LightlyActiveMinutes)/total_minutes*100
+fairly_percentage <- sum(daily_activity$FairlyActiveMinutes)/total_minutes*100
+active_percentage <- sum(daily_activity$VeryActiveMinutes)/total_minutes*100
+
+#Percentage of Active Minutes - Pie chart
+percentage <- data.frame(
+  level=c("Sedentary", "Lightly", "Fairly", "Very Active"),
+  minutes=c(sedentary_percentage, lightly_percentage, fairly_percentage, active_percentage)
+)
+
+plot_ly(percentage, labels = ~level, values = ~minutes, type = 'pie',textposition = 'outside',textinfo = 'label+percent') %>%
+  layout(title = 'Activity Level Minutes',
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE)) 
+```
+
+#### From the above pie chart, it is very clear that **most users spent 81.3% of their daily activity/time in sedentary minutes** and **only 1.74% in very active minutes**.
+
+### How active are the users?
+```{r act_int_box}
+active_minute <- daily_activity %>% 
+  gather(key=Intensity, value=active_minutes, ends_with("minutes")) %>% 
+  select(Intensity, active_minutes) 
+
+ggplot(data=active_minute, aes(x=Intensity, y=active_minutes)) +
+  geom_boxplot(aes(fill=Intensity)) +
+  scale_x_discrete(limits=c("SedentaryMinutes", "LightlyActiveMinutes", "FairlyActiveMinutes", "VeryActiveMinutes")) +
+  labs(title="Active Minutes Vs. Intensity",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33", y="Active Minutes") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+```
+---
+### Sedentary Minutes Vs. Total Steps with Calories and Total Distance
+
+#### The two plots are very similar. 
+```{r sed_tstep_cal_tdis_plot, message=FALSE, warning=FALSE}
+par(mfrow = c(2, 2))
+ggplot(data=daily_activity, aes(x=TotalSteps, y=SedentaryMinutes, color=Calories)) + 
+  geom_point() +
+  labs(title="Sedentary Minutes Vs. Total Steps by Calories",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11)) +
+  stat_smooth(method=lm) +
+  scale_color_gradient(low="yellow", high="darkred")
+
+ggplot(data=daily_activity, aes(x=TotalSteps, y=SedentaryMinutes, color=TotalDistance)) + 
+  geom_point() +
+  labs(title="Sedentary Minutes Vs. Total Steps by Total Distance",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11)) +
+  stat_smooth(method=lm) +
+  scale_color_gradient(low="cadetblue1", high="darkorchid4")
+```
+
+#### It can be concluded from the above two graphs that **the users who are more active burn more calories than the users who are sedentary taking less steps** therefore, burn less calories. 
+
+### Interesting Finding! 
+#### The graph below shows that some users who are sedentary, take minimal steps yet they are able to burn over 1500 to 3000 calories whereas, the users who are more active, taking more steps yet burn similar calories.
+```{r cal_tstep, message=FALSE, warning=FALSE}
+ggplot(data=daily_activity, aes(x=TotalSteps, y = Calories, color=SedentaryMinutes)) + 
+  geom_point() + 
+  labs(title="Calories Vs. Total Steps by Sedentary Minutes", 
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33", x="Total Steps") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11)) +
+  stat_smooth(method=lm) +
+  scale_color_gradient(low="cornsilk", high="navy")
+```
+
+#### The graph below shows that **users who take more steps, burn more calories and has lower BMI**. We can also see some outliers in the top left corner. 
+```{r bmi_tstep, message=FALSE, warning=FALSE}
+ggplot(data=merged_data, aes(x=TotalSteps, y = BMI, color=Calories)) + 
+  geom_point() + 
+  labs(title="BMI Vs. Total Steps by Calories", 
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11)) +
+  stat_smooth(method=lm) +
+  scale_color_gradient(low="deeppink4", high="burlywood1")
+```
+
+## Step VII: Regression analysis and R-value, leverage points `lm()`
+
+> With `lm()` analysis, we want to look at the R-squared. 0% indicates that the model explains none of the variability of the response data around its mean. Higher % indicates that the model explains more of the variability of the response data around its mean. 
+
+#### Postive slope means variables increase/decrease with each other, and negative means one variable goes up and the other goes down.
+```{r lm}
+step_vs_sedentary.mod <- lm(SedentaryMinutes ~ TotalSteps, data = merged_data)
+summary(step_vs_sedentary.mod)
+
+bmi_vs_steps.mod <- lm(BMI ~ TotalSteps, data = merged_data)
+summary(bmi_vs_steps.mod)
+
+calories_vs_steps.mod <- lm(Calories ~ TotalSteps, data = merged_data)
+summary(calories_vs_steps.mod)
+
+sedentary_vs_sleep.mod <- lm(SedentaryMinutes ~ TotalMinutesAsleep, data = merged_data)
+summary(sedentary_vs_sleep.mod)
+
+veryactive_vs_sleep.mod <- lm(VeryActiveMinutes ~ TotalMinutesAsleep, data = merged_data)
+summary(veryactive_vs_sleep.mod)
+```
+
+## Step VIII: Very small proportion of the population are able to achieve the high volume of moderate to vigorous physical activity. 
+
+#### Lets take a look at this! 
+
+### Active Minutes Vs. Calories
+```{r act_min_cal}
+active_minutes_vs_calories <- ggplot(data = merged_data) + 
+  geom_point(mapping=aes(x=Calories, y=FairlyActiveMinutes), color = "maroon", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x, mapping=aes(x=Calories, y=FairlyActiveMinutes, color=FairlyActiveMinutes), color = "maroon", se = FALSE) +
+  
+  geom_point(mapping=aes(x=Calories, y=VeryActiveMinutes), color = "forestgreen", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x,mapping=aes(x=Calories, y=VeryActiveMinutes, color=VeryActiveMinutes), color = "forestgreen", se = FALSE) +
+  
+  geom_point(mapping=aes(x=Calories, y=LightlyActiveMinutes), color = "orange", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x,mapping=aes(x=Calories, y=LightlyActiveMinutes, color=LightlyActiveMinutes), color = "orange", se = FALSE) +
+  
+  geom_point(mapping=aes(x=Calories, y=SedentaryMinutes), color = "steelblue", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x,mapping=aes(x=Calories, y=SedentaryMinutes, color=SedentaryeMinutes), color = "steelblue", se = FALSE) +
+  
+  annotate("text", x=4800, y=160, label="Very Active", color="black", size=3) +
+  annotate("text", x=4800, y=0, label="Fairly Active", color="black", size=3) +
+  annotate("text", x=4800, y=500, label="Sedentary", color="black", size=3) +
+  annotate("text", x=4800, y=250, label="Lightly  Active", color="black", size=3) +
+  labs(x = "Calories", y = "Active Minutes", 
+       title="Active Minutes Vs. Calories",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+
+active_minutes_vs_calories
+```
+
+#### It is to be noted in the above graph that **most data is concentrated on users who burn 1500 to 3000 calories a day**. These users **spent between 8 to 11.5 hours in sedentary**, **5 hours in lightly active**, and **1 to 2 hour(s) in fairly and very active**.
+
+### Active Minutes Vs. Total Steps
+```{r act_min_step}
+active_minutes_vs_steps <- ggplot(data = merged_data) + 
+  geom_point(mapping=aes(x=TotalSteps, y=FairlyActiveMinutes), color = "maroon", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x, mapping=aes(x=TotalSteps, y=FairlyActiveMinutes, color=FairlyActiveMinutes), color = "maroon", se = FALSE) +
+  
+  geom_point(mapping=aes(x=TotalSteps, y=VeryActiveMinutes), color = "forestgreen", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x,mapping=aes(x=TotalSteps, y=VeryActiveMinutes, color=VeryActiveMinutes), color = "forestgreen", se = FALSE) +
+  
+  geom_point(mapping=aes(x=TotalSteps, y=LightlyActiveMinutes), color = "orange", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x,mapping=aes(x=TotalSteps, y=LightlyActiveMinutes, color=LightlyActiveMinutes), color = "orange", se = FALSE) +
+  
+  geom_point(mapping=aes(x=TotalSteps, y=SedentaryMinutes), color = "steelblue", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x,mapping=aes(x=TotalSteps, y=SedentaryMinutes, color=SedentaryMinutes), color = "steelblue", se = FALSE) +
+  
+  annotate("text", x=35000, y=150, label="Very Active", color="black", size=3) +
+  annotate("text", x=35000, y=50, label="Fairly Active", color="black", size=3) +
+  annotate("text", x=35000, y=1350, label="Sedentary", color="black", size=3) +
+  annotate("text", x=35000, y=380, label="Lightly  Active", color="black", size=3) +
+  labs(x = "Total Steps", y = "Active Minutes", 
+       title="Active Minutes Vs. Total Steps",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+
+active_minutes_vs_steps
+```
+
+> According to the Lancet Public Health study on daily steps and all-causes mortality, there is a decrease in the risk of mortality among adults aged 60 years and older with increasing number of steps per day until 6000–8000 steps per day and among adults younger than 60 years until 8000–10,000 steps per day. 
+
+#### It is to be noted in the above graph that **most data is concentrated on users who take about 2500 to 15000 steps a day**. These users **spent between 8 to 11.5 hours in sedentary**, **5 hours in lightly active**, and **1 to 2 hour(s) in fairly and very active**.
+
+### Active Minutes Vs. Total Distance
+```{r actmin_tdis}
+active_minutes_vs_distance <- ggplot(data = merged_data) + 
+  geom_point(mapping=aes(x=TotalDistance, y=FairlyActiveMinutes), color = "steelblue", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x, mapping=aes(x=TotalDistance, y=FairlyActiveMinutes, color=FairlyActiveMinutes), color = "steelblue", se = FALSE) +
+  
+  geom_point(mapping=aes(x=TotalDistance, y=VeryActiveMinutes), color = "gold", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x,mapping=aes(x=TotalDistance, y=VeryActiveMinutes, color=VeryActiveMinutes), color = "gold", se = FALSE) +
+  
+  geom_point(mapping=aes(x=TotalDistance, y=LightlyActiveMinutes), color = "coral", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x,mapping=aes(x=TotalDistance, y=LightlyActiveMinutes, color=LightlyActiveMinutes), color = "coral", se = FALSE) +
+  
+  geom_point(mapping=aes(x=TotalDistance, y=SedentaryMinutes), color = "forestgreen", alpha = 1/3) +
+  geom_smooth(method = loess,formula =y ~ x,mapping=aes(x=TotalDistance, y=SedentaryMinutes, color=SedentaryMinutes), color = "forestgreen", se = FALSE) +
+  
+  scale_x_continuous(limits = c(0, 30)) +
+  
+  annotate("text", x=28, y=150, label="Very Active", color="black", size=3) +
+  annotate("text", x=28, y=50, label="Fairly Active", color="black", size=3) +
+  annotate("text", x=28, y=1250, label="Sedentary", color="black", size=3) +
+  annotate("text", x=28, y=280, label="Lightly  Active", color="black", size=3) +
+  labs(x = "Total Distance", y = "Active Minutes", 
+       title="Active Minutes Vs. Total Distance",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11))
+
+active_minutes_vs_distance
+```
+
+## Step VIII: Analysis on Sleep
+
+#### Convert sleep time from minutes to hours
+```{r sleep_m_h}
+sleep_day_in_hour <- sleep_day
+sleep_day_in_hour$TotalMinutesAsleep <- sleep_day_in_hour$TotalMinutesAsleep/60
+sleep_day_in_hour$TotalTimeInBed <- sleep_day_in_hour$TotalTimeInBed/60
+head(sleep_day_in_hour)
+```
+
+#### Check for any sleep outliers 
+#### No. of times users sleep more than 10 hours or less than 1.  
+```{r more10_less1}
+sum(sleep_day_in_hour$TotalMinutesAsleep > 9)
+sum(sleep_day_in_hour$TotalTimeInBed > 9)
+sum(sleep_day_in_hour$TotalMinutesAsleep < 2)
+sum(sleep_day_in_hour$TotalTimeInBed < 2)
+```
+
+> According to a FitBit sleep study, 55 minutes are spend awake in bed before going to sleep. 
+
+#### Lets see how many users in our dataset is according to the FitBit data.
+```{r aw_in_bd, message=FALSE, warning=FALSE}
+awake_in_bed <- mutate(sleep_day, AwakeTime = TotalTimeInBed - TotalMinutesAsleep)
+awake_in_bed <- awake_in_bed %>% 
+  filter(AwakeTime >= 55) %>% 
+  group_by(Id) %>% 
+  arrange(AwakeTime, desc=TRUE) 
+
+n_distinct(awake_in_bed$Id)      
+```
+
+#### 13 users spend more than 55 minutes in bed before falling asleep
+
+#### No. of minutes a user sleeps may not correlate well with how actively they are, but sedentary time account for about 80% of during the day.
+
+### Majority of the users sleep between 5 to 10 hours which burns around 1500 to 4500 calories per day.
+```{r cal_tsleep, message=FALSE, warning=FALSE}
+ggplot(data=merged_data, aes(x=TotalMinutesAsleep/60, y=Calories, color=TotalSteps)) + 
+  geom_point() +
+  labs(title="Calories Vs. Total Sleep Hours by Total Steps",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33", x="Total Sleep Hours") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11)) +
+  scale_color_gradient(low="blue", high="yellow")
+```
+
+### Majority of the users sleep between 5 to 10 hours, spending 7 to 24 hours in sedentary and only 0 to 2 hours in very active mode. 
+```{r sed_vact_hrs, message=FALSE, warning=FALSE}
+ggplot(data=merged_data, aes(x=TotalMinutesAsleep/60 ,y=SedentaryMinutes/60, color=TotalSteps)) + 
+  geom_point() +
+  labs(x="Total Sleep Hours", y="Sedentary Hours",
+       title="Sedentary Hours Vs. Total Sleep Hours by Total Steps",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11)) +
+  scale_color_gradient(low="steelblue", high="orange")
+
+ggplot(data=merged_data, aes(x=TotalMinutesAsleep/60 ,y=VeryActiveMinutes/60, color=TotalSteps)) + 
+  geom_point() +
+  labs(x="Total Sleep Hours", y="Very Active Hours",
+       title="Very Active Hours Vs. Total Sleep Hours by Total Steps",
+       caption= "Google Data Analytics Capstone",
+       subtitle = "Bellabeat data analysis case study - Period analyzed: 31 days - Users qty: 33") +
+  theme(plot.title = element_text(size = 15), 
+        plot.subtitle = element_text(size = 11)) +
+  scale_color_gradient(low="pink", high="grey2")
+```
+
+```{r save_tab, include=FALSE}
+#Save CSV for Tableau presentation
+write_csv(merged_data, "merged_data.csv")
+write_csv(merged_data_hour, "merged_data_hour.csv")
+```
+
+---
+### References:
+
+1. American Heart Association. "What Exercise Is Right for Me?" _Go Red Get Fit_, 2024. [click here](https://www.heart.org/en/healthy-living/go-red-get-fit/what-exercise-is-right-for-me#:~:text=Get%20at%20least%20150%20minutes%20per%20week%20of%20moderate%2Dintensity%20aerobic%20activity%20or%2075%20minutes%20per%20week%20of%20vigorous%20aerobic%20activity%2C%20or%20a%20combination%20of%20both%2C%20preferably%20spread%20throughout%20the%20week.)
+
+2. World Health Organization (WHO). "Physical Activity." _Be Active_, 2024. [click here](https://www.who.int/initiatives/behealthy/physical-activity#:~:text=Should%20do%20at%20least%20150%20minutes%20of%20moderate%2Dintensity%20physical%20activity%20throughout%20the%20week%2C%20or%20do%20at%20least%2075%20minutes%20of%20vigorous%2Dintensity%20physical%20activity%2C%20or%20an%20equivalent%20combination%20of%20both.)
+
+3. Paluch, Amanda E., et al. "Steps per day and all-cause mortality in middle-aged adults in the Coronary Artery Risk Development in Young Adults study." _The Lancet Public Health_, vol. 6, no. 11, 2021, pp. e787-e794. [click here](https://www.thelancet.com/journals/lanpub/article/PIIS2468-2667%2821%2900302-9/fulltext#seccestitle140:~:text=There%20was%20progressively%20lower%20risk%20of%20mortality%20among%20adults%20aged%2060%20years%20and%20older%20until%20about%206000%E2%80%938000%20steps%20per%20day%20and%20among%20adults%20younger%20than%2060%20years%20until%20about%208000%E2%80%9310%E2%80%88000%20steps%20per%20day.)
+
+4. Banach, M., Lewek, J., Surma, S., Penson, P. E., Sahebkar, A., Martin, S. S., Bajraktari, G., Henein, M. Y., Reiner, Ž., Bielecka-Dąbrowa, A., Bytyçi, I., et al. "The association between daily step count and all-cause and cardiovascular mortality: a meta-analysis." _European Journal of Preventive Cardiology_, vol. 30, no. 18, Dec. 2023, pp. 1975-1985. [click here](https://academic.oup.com/eurjpc/article/30/18/1975/7226309?login=false#:~:text=This%20meta%2Danalysis%20demonstrates%20a%20significant%20inverse%20association%20between%20daily%20step%20count%20and%20all%2Dcause%20mortality%20and%20CV%20mortality%20with%20more%20the%20better%20over%20the%20cut%2Doff%20point%20of%203867%20steps/day%20for%20all%2Dcause%20mortality%20and%20only%202337%20steps%20for%20CV%20mortality.)
